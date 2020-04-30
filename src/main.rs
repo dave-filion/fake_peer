@@ -1,46 +1,24 @@
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, stream::StreamExt};
+use fake_peer::print_byte_array_len;
+use tokio::net::TcpStream;
 use tokio::prelude::*;
-use futures::stream::StreamExt;
+use std::error::Error;
 
 #[tokio::main]
 async fn main() {
-    let addr = "127.0.0.1:6142";
-    let mut listener = TcpListener::bind(addr).await.unwrap();
+    let mut listener = TcpListener::bind("127.0.0.1:6142").await.unwrap();
+    while let Some(stream) = listener.next().await {
+        match stream {
+            Ok(mut stream) => {
+                println!("new client addr: {:?}", stream.peer_addr());
 
-    // convert listener into incoming connection stream
-    let server = async move {
-        let mut incoming = listener.incoming();
-        while let Some(socket_res) = incoming.next().await {
-            match socket_res {
-                Ok(mut socket) => {
-
-                    println!("accepted connection from {:?}", socket.peer_addr());
-                    // spawn future that handles conversation
-                    tokio::spawn(async move {
-
-                        let (mut reader, mut writer) = socket.split();
-
-                        // listen to reader, response to writer
-
-                        match tokio::io::copy(&mut reader, &mut writer).await {
-                            Ok(amt) => {
-                                println!("Wrote {} bytes", amt);
-                            },
-                            Err(e) => {
-                                eprintln!("IO error {:?}", e);
-                            }
-                        }
-                    });
-                },
-                Err(e) => {
-                    println!("accept error = {:?}", e);
-                }
+                // read handshake
+                let mut buf = [0u8; 512];
+                let bytes_read = stream.read(&mut buf).await.unwrap();
+                println!("Read {} bytes", bytes_read);
+                print_byte_array_len("handshake request", &buf, bytes_read);
             }
+            Err(e) => { /* connection failed */ }
         }
-    };
-
-    println!("server starting on {}", addr);
-
-    // start the server and block
-    server.await;
+    }
 }
